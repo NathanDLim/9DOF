@@ -20,7 +20,7 @@ LSM9DS1 imu;
 float gpitch,groll,gyaw;
 float goffX,goffY,goffZ;
 float tx,ty,tz;
-int16_t mxmin,mxmax,mymin,mymax;
+int16_t mxmin,mxmax,mymin,mymax,mzmin;
 bool calibrated;
 
 /*
@@ -60,11 +60,11 @@ void setup() {
   mymin = 20000;
   mxmax = -1;
   mymax = -1;
+  mzmin= 0;
   calibrated = false;
 
-//  imu.calibrateMag(true);
-
   //the gyroscope offsets must be first taken into account. 1000 is a lot, but the z axis for the gyropscope may drift if this number goes down.
+  //if the heading is accurate, this number can go lower
   averageGyro(&goffX,&goffY,&goffZ,1000);
 
 }
@@ -108,7 +108,7 @@ void loop() {
     fixMagOffsets();
     m[0] = (imu.calcMag(imu.my)-imu.calcMag((mymax+mymin)/2));
     m[1] = (imu.calcMag(imu.mx)-imu.calcMag((mxmax+mxmin)/2));
-    m[2] = imu.calcMag(imu.mz)-0.0417;
+    m[2] = imu.calcMag(imu.mz);
   }
   else
   {
@@ -124,21 +124,37 @@ void loop() {
   gyaw += abs(tz-goffZ)<0.025? 0:(tz-goffZ)/2000;
 
   //Complementary filter. Combined the gyropscope data with the accelerometer and magnetometer data.
-  gpitch = gpitch*0.98 - 0.02*atan2(-imu.calcAccel(imu.ax), sqrt(imu.calcAccel(imu.ay) * imu.calcAccel(imu.ay) + imu.calcAccel(imu.az) * imu.calcAccel(imu.az)));
-  groll = groll*0.98 - 0.02*atan2(imu.calcAccel(imu.ay), imu.calcAccel(imu.az));
+//  float apitch = atan2(-imu.calcAccel(imu.ax), sqrt(imu.calcAccel(imu.ay) * imu.calcAccel(imu.ay) + imu.calcAccel(imu.az) * imu.calcAccel(imu.az)));
+//  float aroll = atan2(imu.calcAccel(imu.ay), imu.calcAccel(imu.az))
+
+  float apitch = atan2(-imu.calcAccel(imu.ax), sqrt(imu.calcAccel(imu.ay) * imu.calcAccel(imu.ay) + imu.calcAccel(imu.az) * imu.calcAccel(imu.az)));
+  float aroll = atan2(imu.calcAccel(imu.ay), imu.calcAccel(imu.az));
+  gpitch = gpitch*0.98 - 0.02*apitch;
+  groll = groll*0.98 - 0.02*aroll;
   gyaw = gyaw*0.98 + 0.02*atan2(-m[1],m[0]);
 
-  float xh = m[0]*cos(gpitch) + m[1]*sin(gpitch)*sin(groll) + m[2]*sin(gpitch)*cos(groll);
-  float yh = m[2]*sin(groll)-m[1]*cos(groll);
+  
+//  float xh = m[0]*cos(gpitch) + m[1]*sin(gpitch)*sin(groll) + m[2]*sin(gpitch)*cos(groll);
+//  float yh = m[2]*sin(groll)-m[1]*cos(groll);
+
+  //xh is calibrated to counteract roll
+  float xh = m[0]*cos(gpitch) +m[2]*sin(groll) - m[1]*sin(groll);
+  float yh = m[1];
+  
+  gyaw = atan2(yh,xh);
 
 
-//  Serial.print(groll*180/PI);
-//  Serial.print(" " + String(gpitch*180/PI));
-//  Serial.println(" " + String((gyaw)*180/PI-DECLINATION));
-
-//  Serial.print(imu.my);
+  /*
+   * counteracting roll for xh TODO: need to calibrate xh and yh against pitch, and yh against roll.
+   */
+//  Serial.print(m[0],5);
 //  Serial.print(" ");
-//  Serial.print(imu.mx);
+//  Serial.print(m[0]*cos(gpitch) +m[2]*sin(groll) - m[1]*sin(groll),5);
+//  Serial.print(" ");
+//  Serial.print(m[1]*sin(groll),5);
+//  Serial.print(" ");
+//  Serial.println((m[2])*sin(groll),5);
+  
 //  
 //  Serial.print(" ");
 //  Serial.print(mxmin); 
@@ -147,15 +163,20 @@ void loop() {
 //  Serial.print(" ");
 //  Serial.println((mxmax+mxmin)/2);
   
-  Serial.print(groll*180/PI);
+  Serial.print(aroll*180/PI);
   Serial.print(" ");
-  Serial.print(gpitch*180/PI);
+  Serial.print(apitch*180/PI);
   Serial.print(" ");
   Serial.println(gyaw*180/PI);
-//  Serial.println(" " + String(imu.calcMag(imu.mz)-goffZ));
+//  Serial.print(" ");
+//  Serial.println(atan2(-m[1],m[0])*180/PI);
 
   delay(PRINT_SPEED);
 
+}
+
+int sign(float x){
+  return (x>0)? 1:-1;
 }
 
 /*
@@ -167,9 +188,10 @@ void fixMagOffsets(){
 
   int16_t tempmx = imu.mx;
   int16_t tempmy = imu.my;
+  int16_t tempmz = imu.mz;
 
   //some sort of error
-  if(abs(tempmx) > 100000 || abs(tempmy) > 10000)
+  if(abs(tempmx) > 100000 || abs(tempmy) > 10000 || abs(tempmz) > 5000)
     return;
   
   if(tempmx > mxmax)
@@ -181,6 +203,9 @@ void fixMagOffsets(){
     mymax = tempmy;
   else if(tempmy < mymin)
     mymin = tempmy;
+
+  if(tempmz < mzmin)
+    mzmin = tempmz;
   
 }
 
