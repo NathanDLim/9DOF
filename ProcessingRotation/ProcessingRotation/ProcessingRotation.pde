@@ -8,6 +8,7 @@ float x,y,z,a;
 int rectW,rectH,rectL;
 float zerox,zeroy,zeroz;
 PrintWriter output;
+boolean calibrate;
 
 void setup() {
   size(1000, 800, P3D);
@@ -17,6 +18,7 @@ void setup() {
   zerox =0;
   zeroy=0;
   zeroz=0;
+  calibrate = false;
   
   String[] ports= Serial.list();
   text(ports[2],30,20);
@@ -26,7 +28,7 @@ void setup() {
    myPort = new Serial(this, portName, 115200);
   }
   
-  output = createWriter("angles.txt");
+  //output = createWriter("angles.txt");
   
   background(0);
   ortho();
@@ -54,7 +56,10 @@ void draw() {
    zeroz=z;
  }
  
-  output.println(str(x) + " " + str(y));
+ 
+  if(calibrate)
+    text("Calibrating Magnetometer",100,100);
+  //output.println(str(x) + " " + str(y));
   println(str(x) + " " + str(y));
 
   rotateX((x-zerox)/180*PI);
@@ -125,7 +130,12 @@ void drawCylinder(float topRadius, float bottomRadius, float tall, int sides) {
 }
 
 void keyPressed() {
-  output.flush(); // Writes the remaining data to the file
-  output.close(); // Finishes the file
-  exit(); // Stops the program
+  if(calibrate)
+    myPort.write("cal");
+  else
+    myPort.write("cal0");
+  calibrate = !calibrate;
+  //output.flush(); // Writes the remaining data to the file
+  //output.close(); // Finishes the file
+  //exit(); // Stops the program
 }
