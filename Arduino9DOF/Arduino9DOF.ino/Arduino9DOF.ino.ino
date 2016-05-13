@@ -20,7 +20,8 @@ LSM9DS1 imu;
 float gpitch,groll,gyaw;
 float goffX,goffY,goffZ;
 float tx,ty,tz;
-float mxmin,mxmax,mymin,mymax;
+int16_t mxmin,mxmax,mymin,mymax;
+bool calibrated;
 
 /*
  * gyroscope data is very unstable, we find the average of a number of samples to smooth the data
@@ -55,10 +56,11 @@ void setup() {
   gpitch = 0;
   gyaw = 0;
   groll = 0;
-  mxmin = 1.0;
-  mymin = 1.0;
-  mxmax = -1.0;
-  mymax = -1.0;
+  mxmin = 20000;
+  mymin = 20000;
+  mxmax = -1;
+  mymax = -1;
+  calibrated = false;
 
 //  imu.calibrateMag(true);
 
@@ -72,23 +74,49 @@ void loop() {
 
   if(Serial.available() > 0){
     String s = Serial.readString();
-    if(s.equals("cal")){
-      imu.magOffset(X_AXIS,(mxmax + mxmin)/2);
-      imu.magOffset(Y_AXIS,(mymax + mymin)/2);
+    if(s.length() > 3){
+      if(s.substring(0,3).equals("cal")){
+        s=s.substring(3);
+        imu.magOffset(X_AXIS,s.toInt());
+        imu.magOffset(Y_AXIS,s.toInt());
+        Serial.println("Calibrated " + s);
+        mxmin = 20000;
+        mymin = 20000;
+        mxmax = -1;
+        mymax = -1;
+        calibrated=true;
+      }
+    }
+    else if (s.equals("cal")){
+      imu.magOffset(X_AXIS,(mxmax+mxmin)/2);
+      imu.magOffset(Y_AXIS,(mymax+mymin)/2);
       Serial.println("Calibrated");
-      mxmin = 1.0;
-      mymin = 1.0;
-      mxmax = -1.0;
-      mymax = -1.0;
+      mxmin = 20000;
+      mymin = 20000;
+      mxmax = -1;
+      mymax = -1;
     }
   }
 
   imu.readAccel();
-  fixMagOffsets();
+  
   
   averageGyro(&tx,&ty,&tz,10);
 
-  float m[] = {-(imu.calcMag(imu.my) - ((mymax-mymin)/2 -mymin)),-(imu.calcMag(imu.mx)-((mxmax-mxmin)/2 -mxmin)),imu.calcMag(imu.mz)-0.0417};
+  float m[3];
+  if(!calibrated){
+    fixMagOffsets();
+    m[0] = (imu.calcMag(imu.my)-imu.calcMag((mymax+mymin)/2));
+    m[1] = (imu.calcMag(imu.mx)-imu.calcMag((mxmax+mxmin)/2));
+    m[2] = imu.calcMag(imu.mz)-0.0417;
+  }
+  else
+  {
+    fixMagOffsets();
+    m[0] = imu.calcMag(imu.my);
+    m[1] = imu.calcMag(imu.mx);
+    m[2] = imu.calcMag(imu.mz);
+  }
 
   //integrate gyropscope data to find approx angle. This will have errors over time.
   groll += abs(tx-goffX)<0.05? 0:(tx-goffX)/2000;
@@ -98,24 +126,27 @@ void loop() {
   //Complementary filter. Combined the gyropscope data with the accelerometer and magnetometer data.
   gpitch = gpitch*0.98 - 0.02*atan2(-imu.calcAccel(imu.ax), sqrt(imu.calcAccel(imu.ay) * imu.calcAccel(imu.ay) + imu.calcAccel(imu.az) * imu.calcAccel(imu.az)));
   groll = groll*0.98 - 0.02*atan2(imu.calcAccel(imu.ay), imu.calcAccel(imu.az));
-  //the mx and my must be offset by a certain amount. 0.105 and 0.155 are found by looking at the max and min data and finding where 0,0 should be.
-//  gyaw = gyaw*0.98 + 0.02*atan2(imu.calcMag(imu.mx)-0.105,imu.calcMag(imu.my)-0.155);
+  gyaw = gyaw*0.98 + 0.02*atan2(-m[1],m[0]);
 
   float xh = m[0]*cos(gpitch) + m[1]*sin(gpitch)*sin(groll) + m[2]*sin(gpitch)*cos(groll);
   float yh = m[2]*sin(groll)-m[1]*cos(groll);
 
-  gyaw = atan2(-m[1],m[0]);
 
 //  Serial.print(groll*180/PI);
 //  Serial.print(" " + String(gpitch*180/PI));
 //  Serial.println(" " + String((gyaw)*180/PI-DECLINATION));
 
-//  Serial.print(m[1],5);
+//  Serial.print(imu.my);
 //  Serial.print(" ");
-//  Serial.print(m[0],5);
+//  Serial.print(imu.mx);
 //  
 //  Serial.print(" ");
-//  Serial.println(((mxmax-mxmin)/2 -mxmin),5);
+//  Serial.print(mxmin); 
+//  Serial.print(" ");
+//  Serial.print(mxmax);
+//  Serial.print(" ");
+//  Serial.println((mxmax+mxmin)/2);
+  
   Serial.print(groll*180/PI);
   Serial.print(" ");
   Serial.print(gpitch*180/PI);
@@ -127,14 +158,18 @@ void loop() {
 
 }
 
+/*
+ * This function reads the magnetometer and finds the highest and lowest values of the x and y axis. It is used to offset the magnetometers.
+ * In order to have valid highs and lows, the IMU must be rotated slowly in a full circle.
+ */
 void fixMagOffsets(){
   imu.readMag();
 
-  float tempmx = imu.calcMag(imu.mx);
-  float tempmy = imu.calcMag(imu.my);
+  int16_t tempmx = imu.mx;
+  int16_t tempmy = imu.my;
 
   //some sort of error
-  if(abs(tempmx) > 0.13 || abs(tempmy) > 0.13)
+  if(abs(tempmx) > 100000 || abs(tempmy) > 10000)
     return;
   
   if(tempmx > mxmax)
