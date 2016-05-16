@@ -20,7 +20,7 @@ LSM9DS1 imu;
 float gpitch,groll,gyaw;
 float goffX,goffY,goffZ;
 float tx,ty,tz;
-int16_t mxmin,mxmax,mymin,mymax,mzmin;
+int16_t mxmin,mxmax,mymin,mymax;
 bool calibrated;
 
 /*
@@ -43,7 +43,7 @@ void averageGyro(float *gxT, float *gyT, float *gzT, int num){
 
 void setup() {
   
-  Serial.begin(115200);
+  Serial.begin(9600);
   
   imu.settings.device.commInterface = IMU_MODE_I2C;
   imu.settings.device.mAddress = MAG_ADDR;
@@ -60,7 +60,6 @@ void setup() {
   mymin = 20000;
   mxmax = -1;
   mymax = -1;
-  mzmin= 0;
   calibrated = false;
 
   //the gyroscope offsets must be first taken into account. 1000 is a lot, but the z axis for the gyropscope may drift if this number goes down.
@@ -113,10 +112,15 @@ void loop() {
   else
   {
     fixMagOffsets();
-    m[0] = imu.calcMag(imu.my);
-    m[1] = imu.calcMag(imu.mx);
+//    imu.readMag();
+    m[0] = imu.calcMag(imu.mx);
+    m[1] = imu.calcMag(imu.my);
     m[2] = imu.calcMag(imu.mz);
   }
+
+  m[0] = imu.calcMag(imu.mx);
+  m[1] = imu.calcMag(imu.my);
+  m[2] = imu.calcMag(imu.mz);
 
   //integrate gyropscope data to find approx angle. This will have errors over time.
   groll += abs(tx-goffX)<0.05? 0:(tx-goffX)/2000;
@@ -133,51 +137,28 @@ void loop() {
   groll = groll*0.98 - 0.02*aroll;
   gyaw = gyaw*0.98 + 0.02*atan2(-m[1],m[0]);
 
-  
-//  float xh = m[0]*cos(gpitch) + m[1]*sin(gpitch)*sin(groll) + m[2]*sin(gpitch)*cos(groll);
-//  float yh = m[2]*sin(groll)-m[1]*cos(groll);
 
-  //xh is calibrated to counteract roll
-  float xh = m[0]*cos(gpitch) +m[2]*sin(groll) - m[1]*sin(groll);
-  float yh = m[1];
+  /*
+   * xh and yh formulas taken from https://www.sparkfun.com/datasheets/Sensors/Magneto/Tilt%20Compensated%20Compass.pdf
+   * The Z axis on the magnometer is opposite of that found in the above link.
+   */
+  float xh = m[0]*cos(gpitch) +m[2]*sin(gpitch);
+  float yh = m[0]*sin(groll)*sin(gpitch)+m[1]*cos(groll) + m[2]*sin(groll)*cos(gpitch);
   
   gyaw = atan2(yh,xh);
 
-
-  /*
-   * counteracting roll for xh TODO: need to calibrate xh and yh against pitch, and yh against roll.
-   */
-//  Serial.print(m[0],5);
-//  Serial.print(" ");
-//  Serial.print(m[0]*cos(gpitch) +m[2]*sin(groll) - m[1]*sin(groll),5);
-//  Serial.print(" ");
-//  Serial.print(m[1]*sin(groll),5);
-//  Serial.print(" ");
-//  Serial.println((m[2])*sin(groll),5);
   
-//  
-//  Serial.print(" ");
-//  Serial.print(mxmin); 
-//  Serial.print(" ");
-//  Serial.print(mxmax);
-//  Serial.print(" ");
-//  Serial.println((mxmax+mxmin)/2);
-  
+  Serial.print(" ");
   Serial.print(aroll*180/PI);
   Serial.print(" ");
   Serial.print(apitch*180/PI);
   Serial.print(" ");
   Serial.println(gyaw*180/PI);
-//  Serial.print(" ");
-//  Serial.println(atan2(-m[1],m[0])*180/PI);
 
   delay(PRINT_SPEED);
 
 }
 
-int sign(float x){
-  return (x>0)? 1:-1;
-}
 
 /*
  * This function reads the magnetometer and finds the highest and lowest values of the x and y axis. It is used to offset the magnetometers.
@@ -191,7 +172,7 @@ void fixMagOffsets(){
   int16_t tempmz = imu.mz;
 
   //some sort of error
-  if(abs(tempmx) > 100000 || abs(tempmy) > 10000 || abs(tempmz) > 5000)
+  if(abs(tempmx) > 100000 || abs(tempmy) > 10000)
     return;
   
   if(tempmx > mxmax)
@@ -203,10 +184,6 @@ void fixMagOffsets(){
     mymax = tempmy;
   else if(tempmy < mymin)
     mymin = tempmy;
-
-  if(tempmz < mzmin)
-    mzmin = tempmz;
-  
 }
 
 
