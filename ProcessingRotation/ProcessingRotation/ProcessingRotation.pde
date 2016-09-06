@@ -62,9 +62,9 @@ void draw() {
     text("Calibrating Magnetometer",100,100);
   //output.println(str(x) + " " + str(y));
   //println(str(x) + " " + str(y));
-
+rotateZ((zeroz-z)/180*PI);
  rotateX((x-zerox)/180*PI);
- rotateZ((zeroz-z)/180*PI);
+ 
  rotateY(((y-zeroy))/180*PI);
   
 

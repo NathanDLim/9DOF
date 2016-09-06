@@ -105,55 +105,62 @@ void loop() {
   float m[3];
   if(!calibrated){
     fixMagOffsets();
-    m[0] = (imu.calcMag(imu.my)-imu.calcMag((mymax+mymin)/2));
-    m[1] = (imu.calcMag(imu.mx)-imu.calcMag((mxmax+mxmin)/2));
+    m[0] = (imu.calcMag(imu.mx)-imu.calcMag((mxmax+mxmin)/2));
+    m[1] = (imu.calcMag(imu.my)-imu.calcMag((mymax+mymin)/2));
     m[2] = imu.calcMag(imu.mz);
   }
   else
   {
     fixMagOffsets();
-//    imu.readMag();
     m[0] = imu.calcMag(imu.mx);
     m[1] = imu.calcMag(imu.my);
     m[2] = imu.calcMag(imu.mz);
   }
 
-  m[0] = imu.calcMag(imu.mx);
-  m[1] = imu.calcMag(imu.my);
-  m[2] = imu.calcMag(imu.mz);
-
   //integrate gyropscope data to find approx angle. This will have errors over time.
   groll += abs(tx-goffX)<0.05? 0:(tx-goffX)/2000;
   gpitch += abs(ty-goffY)<0.05? 0:(ty-goffY)/2000;
   gyaw += abs(tz-goffZ)<0.025? 0:(tz-goffZ)/2000;
+  if(gyaw > PI)
+    gyaw -= 2*PI;
+  else if (gyaw < -PI)
+    gyaw += 2*PI;
 
-  //Complementary filter. Combined the gyropscope data with the accelerometer and magnetometer data.
+  
 //  float apitch = atan2(-imu.calcAccel(imu.ax), sqrt(imu.calcAccel(imu.ay) * imu.calcAccel(imu.ay) + imu.calcAccel(imu.az) * imu.calcAccel(imu.az)));
 //  float aroll = atan2(imu.calcAccel(imu.ay), imu.calcAccel(imu.az))
 
   float apitch = atan2(-imu.calcAccel(imu.ax), sqrt(imu.calcAccel(imu.ay) * imu.calcAccel(imu.ay) + imu.calcAccel(imu.az) * imu.calcAccel(imu.az)));
   float aroll = atan2(imu.calcAccel(imu.ay), imu.calcAccel(imu.az));
-  gpitch = gpitch*0.98 - 0.02*apitch;
-  groll = groll*0.98 - 0.02*aroll;
-  gyaw = gyaw*0.98 + 0.02*atan2(-m[1],m[0]);
-
-
-  /*
+   /*
    * xh and yh formulas taken from https://www.sparkfun.com/datasheets/Sensors/Magneto/Tilt%20Compensated%20Compass.pdf
    * The Z axis on the magnometer is opposite of that found in the above link.
    */
   float xh = m[0]*cos(gpitch) +m[2]*sin(gpitch);
   float yh = m[0]*sin(groll)*sin(gpitch)+m[1]*cos(groll) + m[2]*sin(groll)*cos(gpitch);
-  
-  gyaw = atan2(yh,xh);
+  float myaw =  atan2(yh,xh);
+
+  //Complementary filter. Combined the gyropscope data with the accelerometer data
+  gpitch = gpitch*0.98 - 0.02*apitch;
+  groll = groll*0.98 - 0.02*aroll;
+  gyaw = gyaw*0.98 - 0.02*myaw;
+
+//  Serial.print(" ");
+//  Serial.print(m[0],5);
+//  Serial.print(" ");
+//  Serial.print(xh,5);
+//  Serial.print(" ");
+//  Serial.print(m[1],5);
+//  Serial.print(" ");
+//  Serial.println(yh,5);
 
   
   Serial.print(" ");
-  Serial.print(aroll*180/PI);
+  Serial.print(gpitch*180/PI);
   Serial.print(" ");
-  Serial.print(apitch*180/PI);
+  Serial.print(groll*180/PI);
   Serial.print(" ");
-  Serial.println(gyaw*180/PI);
+  Serial.println(myaw*180/PI);
 
   delay(PRINT_SPEED);
 
